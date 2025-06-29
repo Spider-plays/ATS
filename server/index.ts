@@ -1,6 +1,8 @@
+import "dotenv/config";
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
+import net from "net";
 
 const app = express();
 app.use(express.json());
@@ -36,6 +38,25 @@ app.use((req, res, next) => {
   next();
 });
 
+// Helper to find a free port
+async function getFreePort(startPort: number): Promise<number> {
+  let port = startPort;
+  while (true) {
+    const isFree = await new Promise((resolve) => {
+      const tester = net
+        .createServer()
+        .once("error", () => resolve(false))
+        .once("listening", () => {
+          tester.close();
+          resolve(true);
+        })
+        .listen(port, "0.0.0.0");
+    });
+    if (isFree) return port;
+    port++;
+  }
+}
+
 (async () => {
   const server = await registerRoutes(app);
 
@@ -56,15 +77,15 @@ app.use((req, res, next) => {
     serveStatic(app);
   }
 
-  // ALWAYS serve the app on port 5000
-  // this serves both the API and the client.
-  // It is the only port that is not firewalled.
-  const port = 5000;
-  server.listen({
-    port,
-    host: "0.0.0.0",
-    reusePort: true,
-  }, () => {
-    log(`serving on port ${port}`);
-  });
+  // Try to use port 5000, or next available
+  const port = await getFreePort(5000);
+  server.listen(
+    {
+      port,
+      host: "0.0.0.0",
+    },
+    () => {
+      log(`serving on port ${port}`);
+    }
+  );
 })();
